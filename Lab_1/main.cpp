@@ -9,90 +9,55 @@ using spos::lab1::demo::f_func;
 using spos::lab1::demo::g_func;
 const spos::lab1::demo::op_group AND = spos::lab1::demo::AND;
 
-std::condition_variable cv; std::mutex m;
+std::condition_variable f_var, g_var; std::mutex m;
 bool ready, processed;
 std::string data;
-void worker_thread()
 
-{
+int somefunc(){
 
-// Wait until main() sends data
-
-    std::unique_lock<std::mutex> lk(m);
-
-    cv.wait(lk, []{return ready;});
-
-// after the wait, we own the lock.
-
-    std::cout << "Worker thread is processing data\n";
-
-    data += " after processing";
-
-// Send data back to main()
-
-    processed = true;
-
-    std::cout << "Worker thread signals data processing completed\n";
-
-    lk.unlock();
-
-    cv.notify_one();
 }
 
-int main_thread()
+void f_function(){
+    std::unique_lock<std::mutex> lk(m);
+    f_var.wait(lk, []{return ready;});// after main has sent data, we own the lock.
 
-{
+    std::cout << "Worker thread is processing data\n";
+    data += " after processing";
 
-    std::thread worker(worker_thread);
+    processed = true;
+    std::cout << "Worker thread signals data processing completed\n";
+    lk.unlock();
+    f_var.notify_one(); // Send data back to main()
+}
 
+
+
+int main_thread(){
+
+    std::thread f(f_function);
 
 // send data to the worker thread
     {
-        std::lock_guard<std::mutex> lk(m);
+        std::cout << "main() start\n";
+        std::lock_guard<std::mutex> f_lk(m);
         ready = true;
         std::cout << "main() signals data ready for processing\n";
 
     }
-    cv.notify_one();
 // wait for the worker
     {
-        std::unique_lock<std::mutex> lk(m);
-        cv.wait(lk, []{return processed;});
+        std::unique_lock<std::mutex> f_lk(m);
+        f_var.wait(f_lk, []{return processed;});
     }
+
+
     std::cout << "Back in main(), data = " << data << '\n';
-    worker.join();
+    f.join();
 
 }
 
-void perform_test(int x){
-    std::cout << "Completing test number " << x << std::endl;
-    std::cout << "Press 'Ctrl-Z' to quit.\n";
-    char ch;
-    while ( (ch=fgetc(stdin)) != EOF ) {
-
-        std::cout << x++ << std::endl;
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-    }
-
-
-}
 
 int main(){
-    std::cout << "Press something to exit\n";
-    termios oldt{};
-    tcgetattr(STDIN_FILENO, &oldt);
-    termios newt{oldt};
-    newt.c_lflag &= (~ICANON & ~ECHO);
-    tcsetattr(STDIN_FILENO, TCSANOW, &newt);
-
-    std::string s;
-    getchar();
-
-    std::cout << "k" << std::endl;
-    return 0;
-
-    for(int i = 0; i <= 5; i++){
-        perform_test(i);
-    }
+    main_thread();
     return 0;
 }
