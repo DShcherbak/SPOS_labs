@@ -23,7 +23,19 @@ void f_function(int x){
     std::cout << "f thread is processing data" << std::endl;
 
     f_ready = false;
-    f_result = f_func<AND>(x);
+    std::future<bool> fut = std::async(f_func<AND>,x);
+
+    // do something while waiting for function to set future:
+    std::cout << "checking f, please wait" << std::endl;
+    std::chrono::seconds span (5);
+    if (fut.wait_for(span)==std::future_status::timeout){
+        std::cout << "f - TIMEOUT!" << std::endl;
+        lock.unlock();
+        condvar.notify_one();
+        return;
+    }
+    f_result = fut.get();
+
     f_processed = true;
 
     std::cout << "F thread signals data processing completed" << std::endl;
@@ -39,7 +51,8 @@ void g_function(int x){
     //std::this_thread::sleep_for(std::chrono::seconds(5));
 
     g_ready = false;
-    g_result = g_func<AND>(x);
+    g_result =g_func<AND>(x);
+
     g_processed = true;
     std::cout << "G thread signals data processing completed" << std::endl;
     lock.unlock();
@@ -99,6 +112,7 @@ int main_thread(int fx, int gx){
             }
             if(!g_processed) {
                 std::cout << "I believe g hangs..." << std::endl;
+                pthread_cancel(g.native_handle());
                 return 0;
             }
             else {
@@ -111,7 +125,7 @@ int main_thread(int fx, int gx){
         std::cout << "G(" << gx << ") = " << g_result << std::endl;
         {
             if(!f_processed){
-                std::unique_lock<std::mutex> lk_1(mf, std::try_to_lock);
+                std::unique_lock<std::mutex> lk_1(mf);
                 condvar.wait_for(lk_1, std::chrono::seconds(5), []{return f_processed;});
             }
             if(!f_processed) {
