@@ -94,7 +94,7 @@ int main_thread(int fx, int gx){
         std::cout << "F(" << fx << ") = " << f_result << std::endl;
         {
             if(!g_processed){
-                std::unique_lock<std::mutex> lk_1(mg);
+                std::unique_lock<std::mutex> lk_1(mg, std::try_to_lock);
                 condvar.wait_for(lk_1, std::chrono::seconds(5), []{return g_processed;});
             }
             if(!g_processed) {
@@ -111,7 +111,7 @@ int main_thread(int fx, int gx){
         std::cout << "G(" << gx << ") = " << g_result << std::endl;
         {
             if(!f_processed){
-                std::unique_lock<std::mutex> lk_1(mf);
+                std::unique_lock<std::mutex> lk_1(mf, std::try_to_lock);
                 condvar.wait_for(lk_1, std::chrono::seconds(5), []{return f_processed;});
             }
             if(!f_processed) {
