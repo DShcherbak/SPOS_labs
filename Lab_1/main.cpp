@@ -20,13 +20,12 @@ std::string data;
 void f_function(int x){
     std::unique_lock<std::mutex> lock(mf);
     condvar.wait(lock, []{return f_ready;});// after main has sent data, we own the lock.
-
-    std::this_thread::sleep_for(std::chrono::seconds(6));
     std::cout << "f thread is processing data" << std::endl;
-    data += " f after processing";
+
     f_ready = false;
-    f_processed = true;
     f_result = f_func<AND>(x);
+    f_processed = true;
+
     std::cout << "F thread signals data processing completed" << std::endl;
     lock.unlock();
     condvar.notify_one(); // Send data back to main()
@@ -35,14 +34,14 @@ void f_function(int x){
 void g_function(int x){
     std::unique_lock<std::mutex> lock(mg);
     condvar.wait(lock, []{return g_ready;});// after main has sent data, we own the lock.
+    std::cout << "g thread is processing data" << std::endl;
 
-    std::this_thread::sleep_for(std::chrono::seconds(5));
-    std::cout << "g thread is processing data" << std::endl;;
-    data += " g after processing";
+    //std::this_thread::sleep_for(std::chrono::seconds(5));
+
     g_ready = false;
-    g_processed = true;
     g_result = g_func<AND>(x);
-    std::cout << "G thread signals data processing completed" << std::endl;;
+    g_processed = true;
+    std::cout << "G thread signals data processing completed" << std::endl;
     lock.unlock();
     condvar.notify_one(); // Send data back to main()
 }
@@ -69,18 +68,20 @@ int main_thread(int fx, int gx){
 
 // send data to the worker thread
     {
-        std::cout << "main-f start" << std::endl;;
+        std::cout << "main-f steady" << std::endl;;
         std::lock_guard<std::mutex> lk(mf);
         f_ready = true;
-        std::cout << "main-f signals data ready for processing" << std::endl;;
+        f_processed = false;
+        std::cout << "main-f go" << std::endl;;
         condvar.notify_one();
 
     }
     {
-        std::cout << "main-g start" << std::endl;;
+        std::cout << "main-g steady" << std::endl;;
         std::lock_guard<std::mutex> lk(mg);
         g_ready = true;
-        std::cout << "main-g signals data ready for processing" << std::endl;;
+        g_processed = false;
+        std::cout << "main-g go" << std::endl;;
         condvar.notify_one();
     }
     std::unique_lock<std::mutex> lk(m);
@@ -123,29 +124,12 @@ int main_thread(int fx, int gx){
             }
         }
     }
-    /*if(!f_processed){
-        std::cout << "G(" << gx << ") = " << g_processed;
-        {
-            std::unique_lock<std::mutex> lk(m);
-            condvar.wait_for(lk, std::chrono::seconds(5), []{return g_processed;});
-            lk.unlock();
-        }
-    }
-    else{
-        std::cout << "F(" << fx << ") = " << f_processed;
-        {
-            std::unique_lock<std::mutex> lk(m);
-            condvar.wait_for(lk, std::chrono::seconds(5), []{return g_processed;});
-            lk.unlock();
-        }*/
 
-
-
-    //lk.unlock();
-    std::cout << "Back in main(), data = " << data << '\n';
     f.join();
     g.join();
-    std::cout << "Back in main(), data = " << data << '\n';
+    std::cout << "----------------------------------------------------" << std::endl;
+    std::cout.flush();
+    std::this_thread::sleep_for(std::chrono::seconds(1));
 }
 
 
@@ -154,10 +138,10 @@ int main(){
     char choice;
     std::cin >> choice;
     std::vector<int> f_args, g_args;
-    int N = 5;
+    int N = 6;
     if(choice == '1'){
-        f_args = {1,2,3,4,5};
-        g_args = {1,2,3,4,5};
+        f_args = {0,1,2,3,4,5};
+        g_args = {0,1,2,3,4,5};
     } else if(choice == '2') {
         f_args = read_args("F");
         N = f_args.size();
