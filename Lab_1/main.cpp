@@ -2,8 +2,10 @@
 #include <thread>
 #include <future>
 #include <termios.h>
+#include <signal.h>
 #include <unistd.h>
 #include <vector>
+#include <bits/sigthread.h>
 #include "cmake-build-debug/demofuncs"
 
 using spos::lab1::demo::f_func;
@@ -20,42 +22,30 @@ std::string data;
 void f_function(int x){
     std::unique_lock<std::mutex> lock(mf);
     condvar.wait(lock, []{return f_ready;});// after main has sent data, we own the lock.
-    std::cout << "f thread is processing data" << std::endl;
+    lock.unlock();
 
     f_ready = false;
-    std::future<bool> fut = std::async(f_func<AND>,x);
+    f_result =f_func<AND>(x);
 
-    // do something while waiting for function to set future:
-    std::cout << "checking f, please wait" << std::endl;
-    std::chrono::seconds span (5);
-    if (fut.wait_for(span)==std::future_status::timeout){
-        std::cout << "f - TIMEOUT!" << std::endl;
-        lock.unlock();
-        condvar.notify_one();
-        return;
-    }
-    f_result = fut.get();
-
+    lock.lock();
     f_processed = true;
-
-    std::cout << "F thread signals data processing completed" << std::endl;
     lock.unlock();
+
     condvar.notify_one(); // Send data back to main()
 }
 
 void g_function(int x){
     std::unique_lock<std::mutex> lock(mg);
     condvar.wait(lock, []{return g_ready;});// after main has sent data, we own the lock.
-    std::cout << "g thread is processing data" << std::endl;
-
-    //std::this_thread::sleep_for(std::chrono::seconds(5));
+    lock.unlock();
 
     g_ready = false;
     g_result =g_func<AND>(x);
 
+    std::unique_lock<std::mutex> lock_1(mg);
     g_processed = true;
-    std::cout << "G thread signals data processing completed" << std::endl;
-    lock.unlock();
+    lock_1.unlock();
+
     condvar.notify_one(); // Send data back to main()
 }
 
@@ -79,22 +69,19 @@ int main_thread(int fx, int gx){
     std::thread f(f_function, fx);
     std::thread g(g_function, gx);
 
-// send data to the worker thread
+    const bool debug = false;
+    bool f_alive = true, g_alive = true;
     {
-        std::cout << "main-f steady" << std::endl;;
         std::lock_guard<std::mutex> lk(mf);
         f_ready = true;
         f_processed = false;
-        std::cout << "main-f go" << std::endl;;
         condvar.notify_one();
 
     }
     {
-        std::cout << "main-g steady" << std::endl;;
         std::lock_guard<std::mutex> lk(mg);
         g_ready = true;
         g_processed = false;
-        std::cout << "main-g go" << std::endl;;
         condvar.notify_one();
     }
     std::unique_lock<std::mutex> lk(m);
@@ -103,6 +90,7 @@ int main_thread(int fx, int gx){
         std::cout << "Waiting..."  << std::endl;
     }
     lk.unlock();
+
     if(!g_processed) {
         std::cout << "F(" << fx << ") = " << f_result << std::endl;
         {
@@ -112,8 +100,8 @@ int main_thread(int fx, int gx){
             }
             if(!g_processed) {
                 std::cout << "I believe g hangs..." << std::endl;
-                pthread_cancel(g.native_handle());
-                return 0;
+                g.detach();
+                g_alive = false;
             }
             else {
                 std::cout << "G(" << gx << ") = " << g_result << std::endl;
@@ -125,12 +113,13 @@ int main_thread(int fx, int gx){
         std::cout << "G(" << gx << ") = " << g_result << std::endl;
         {
             if(!f_processed){
-                std::unique_lock<std::mutex> lk_1(mf);
+                std::unique_lock<std::mutex> lk_1(mf, std::try_to_lock);
                 condvar.wait_for(lk_1, std::chrono::seconds(5), []{return f_processed;});
             }
             if(!f_processed) {
                 std::cout << "I believe f hangs..." << std::endl;
-                return 0;
+                f_alive = false;
+                f.detach();
             }
             else {
                 std::cout << "F(" << fx << ") = " << f_result << std::endl;
@@ -139,8 +128,10 @@ int main_thread(int fx, int gx){
         }
     }
 
-    f.join();
-    g.join();
+    if(f_alive)
+        f.join();
+    if(g_alive)
+        g.join();
     std::cout << "----------------------------------------------------" << std::endl;
     std::cout.flush();
     std::this_thread::sleep_for(std::chrono::seconds(1));
