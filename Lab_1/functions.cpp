@@ -44,37 +44,6 @@ void g_function(int x){
     cond_g.notify_one();
 }
 
-void f_function_custom(int x){
-    std::unique_lock<std::mutex> lock(mf);
-    cond_f.wait(lock, []{return f_ready;});
-    lock.unlock();
-
-    f_ready = false;
-
-    f_result =my_F(x);
-
-    lock.lock();
-    f_processed = true;
-    lock.unlock();
-
-    cond_f.notify_one();
-}
-
-void g_function_custom(int x){
-    std::unique_lock<std::mutex> lock(mg);
-    cond_g.wait(lock, []{return g_ready;});
-    lock.unlock();
-
-    g_ready = false;
-    g_result =my_G(x);
-
-    std::unique_lock<std::mutex> lock_1(mg);
-    g_processed = true;
-    lock_1.unlock();
-
-    cond_g.notify_one();
-}
-
 void start_threads(){
     {
         std::cout << "here" <<std::endl;
@@ -93,41 +62,6 @@ void start_threads(){
         g_processed = false;
         cond_g.notify_one();
     }
-}
-
-
-
-void monitoring(){
-    {
-        std::unique_lock<std::mutex> lock(mc);
-        cond_cancel.wait(lock, []{return monitoring_in_progress;});
-        lock.unlock();
-    }
-
-    bool siin = false;
-    if(siin){
-        char c;
-        while(c != 'q'){
-            std::cin >> c;
-        }
-    }else{
-
-        std::cout << " reset!" << std::endl;
-        {
-            std::unique_lock<std::mutex> lock(mc);
-            cancelled = monitoring_in_progress;
-            monitoring_in_progress = false;
-        }
-    }
-
-
-}
-
-void stop_monitoring(){
-    std::cout << "STOP!" << std::endl;
-    monitoring_in_progress = false;
-    std::cout << "STOPPED!" << std::endl;
-    cond_cancel.notify_one();
 }
 
 void main_demo(int fx, int gx){
