@@ -1,53 +1,8 @@
+#include "functions.h"
+#include <ncurses.h>
 #include <iostream>
-#include <thread>
-#include <future>
-#include <termios.h>
-#include <signal.h>
-#include <unistd.h>
 #include <vector>
-#include <bits/sigthread.h>
-#include "cmake-build-debug/demofuncs"
 
-using spos::lab1::demo::f_func;
-using spos::lab1::demo::g_func;
-const spos::lab1::demo::op_group AND = spos::lab1::demo::AND;
-
-std::condition_variable condvar;
-std::mutex m, mf, mg;
-bool f_ready, g_ready, f_processed, g_processed;
-bool f_result, g_result;
-std::string data;
-
-
-void f_function(int x){
-    std::unique_lock<std::mutex> lock(mf);
-    condvar.wait(lock, []{return f_ready;});// after main has sent data, we own the lock.
-    lock.unlock();
-
-    f_ready = false;
-    f_result =f_func<AND>(x);
-
-    lock.lock();
-    f_processed = true;
-    lock.unlock();
-
-    condvar.notify_one(); // Send data back to main()
-}
-
-void g_function(int x){
-    std::unique_lock<std::mutex> lock(mg);
-    condvar.wait(lock, []{return g_ready;});// after main has sent data, we own the lock.
-    lock.unlock();
-
-    g_ready = false;
-    g_result =g_func<AND>(x);
-
-    std::unique_lock<std::mutex> lock_1(mg);
-    g_processed = true;
-    lock_1.unlock();
-
-    condvar.notify_one(); // Send data back to main()
-}
 
 std::vector<int> read_args(const std::string& func_name, int n = -1){
 
@@ -63,100 +18,30 @@ std::vector<int> read_args(const std::string& func_name, int n = -1){
     return result;
 }
 
-int main_thread(int fx, int gx){
-
-    std::cout << "Testing f(" << fx << ") AND g(" << gx << ");" << std::endl;
-    std::thread f(f_function, fx);
-    std::thread g(g_function, gx);
-
-    const bool debug = false;
-    bool f_alive = true, g_alive = true;
-    {
-        std::lock_guard<std::mutex> lk(mf);
-        f_ready = true;
-        f_processed = false;
-        condvar.notify_one();
-
-    }
-    {
-        std::lock_guard<std::mutex> lk(mg);
-        g_ready = true;
-        g_processed = false;
-        condvar.notify_one();
-    }
-    std::unique_lock<std::mutex> lk(m);
-    while(!f_processed && !g_processed){
-        condvar.wait_for(lk, std::chrono::seconds(2));
-        std::cout << "Waiting..."  << std::endl;
-    }
-    lk.unlock();
-
-    if(!g_processed) {
-        std::cout << "F(" << fx << ") = " << f_result << std::endl;
-        {
-            if(!g_processed){
-                std::unique_lock<std::mutex> lk_1(mg, std::try_to_lock);
-                condvar.wait_for(lk_1, std::chrono::seconds(5), []{return g_processed;});
-            }
-            if(!g_processed) {
-                std::cout << "I believe g hangs..." << std::endl;
-                g.detach();
-                g_alive = false;
-            }
-            else {
-                std::cout << "G(" << gx << ") = " << g_result << std::endl;
-                std::cout << "RESULT: F(" << fx << ") AND G(" << gx << ") = " << (f_result & g_result) << std::endl;
-            }
-        }
-    }
-    else{
-        std::cout << "G(" << gx << ") = " << g_result << std::endl;
-        {
-            if(!f_processed){
-                std::unique_lock<std::mutex> lk_1(mf, std::try_to_lock);
-                condvar.wait_for(lk_1, std::chrono::seconds(5), []{return f_processed;});
-            }
-            if(!f_processed) {
-                std::cout << "I believe f hangs..." << std::endl;
-                f_alive = false;
-                f.detach();
-            }
-            else {
-                std::cout << "F(" << fx << ") = " << f_result << std::endl;
-                std::cout << "RESULT: F(" << fx << ") AND G(" << gx << ") = " << (f_result & g_result) << std::endl;
-            }
-        }
-    }
-
-    if(f_alive)
-        f.join();
-    if(g_alive)
-        g.join();
-    std::cout << "----------------------------------------------------" << std::endl;
-    std::cout.flush();
-    std::this_thread::sleep_for(std::chrono::seconds(1));
-}
-
-
 int main(){
     std::cout << "Enter 1 to enter demo mode. Enter 2 to enter testing mode. Enter anyting else to quit." << std::endl;
     char choice;
     std::cin >> choice;
     std::vector<int> f_args, g_args;
     int N = 6;
+
     if(choice == '1'){
         f_args = {0,1,2,3,4,5};
         g_args = {0,1,2,3,4,5};
+        for(int i = 0; i < N; i++){
+            main_demo(f_args[i], g_args[i]);
+        }
     } else if(choice == '2') {
         f_args = read_args("F");
         N = f_args.size();
-        g_args = read_args("F", N);
+        g_args = read_args("G", N);
+        for(int i = 0; i < N; i++){
+            main_test(f_args[i], g_args[i]);
+        }
     } else {
         std::cout << "Good bye!" << std::endl;;
         return 0;
     }
-    for(int i = 0; i < N; i++){
-        main_thread(f_args[i], g_args[i]);
-    }
+
     return 0;
 }
