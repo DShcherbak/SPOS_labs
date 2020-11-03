@@ -96,18 +96,14 @@ void main_demo(int fx, int gx){
             break;
         char c = getchar();
         if (c == 'q') {
-            {
-                std::cout << "bye!" << std::endl;
-            }
+            std::cout << "bye!" << std::endl;
             monitor = false;
+
         }
         if(repeated % 20 == 0)
             std::cout << "Waiting along..."  << std::endl;
         repeated++;
     }
-
-    lk_f.unlock();
-    lk_g.unlock();
 
     if(!monitor){
         std::cout << "Calculations were canceled!" << std::endl;
@@ -126,9 +122,7 @@ void main_demo(int fx, int gx){
                     break;
                 char c = getchar();
                 if (c == 'q') {
-                    {
-                        std::cout << "bye!" << std::endl;
-                    }
+                    std::cout << "bye!" << std::endl;
                     monitor = false;
                 }
                 if(repeated % 20 == 0)
@@ -153,9 +147,7 @@ void main_demo(int fx, int gx){
                     break;
                 char c = getchar();
                 if (c == 'q') {
-                    {
-                        std::cout << "bye!" << std::endl;
-                    }
+                    std::cout << "bye!" << std::endl;
                     monitor = false;
                 }
                 if(repeated % 20 == 0)
@@ -172,6 +164,7 @@ void main_demo(int fx, int gx){
             }
         }
     }
+
     set_terminal(terminal);
     std::cout << "terminal is reset!" << std::endl;
     if(f_alive)
