@@ -7,7 +7,7 @@ using spos::lab1::demo::g_func;
 const spos::lab1::demo::op_group AND = spos::lab1::demo::AND;
 
 std::condition_variable cond_f, cond_g, cond_cancel;
-std::mutex m, mf, mg, mc;
+std::mutex m, mf, mg;
 bool f_ready, g_ready, f_processed, g_processed;
 bool f_result, g_result, cancelled, monitoring_in_progress;
 std::string data;
@@ -18,7 +18,7 @@ void f_function(int x){
     lock.unlock();
 
     f_ready = false;
-    std::this_thread::sleep_for(std::chrono::seconds(3));
+    std::this_thread::sleep_for(std::chrono::seconds(2));
     f_result =f_func<AND>(x);
 
     lock.lock();
@@ -34,7 +34,7 @@ void g_function(int x){
     lock.unlock();
 
     g_ready = false;
-    std::this_thread::sleep_for(std::chrono::seconds(5));
+    std::this_thread::sleep_for(std::chrono::seconds(4));
     g_result =g_func<AND>(x);
 
     lock.lock();
@@ -81,10 +81,13 @@ void main_demo(int fx, int gx){
 
     auto terminal = replace_terminal();
 
-    //std :: cout << "terminal is" << std::endl;
+    std :: cout << "terminal is set" << std::endl;
+    monitor = true;
 
     std::unique_lock<std::mutex> lk_f(mf);
+    std :: cout << "f is locked" << std::endl;
     std::unique_lock<std::mutex> lk_g(mg);
+    std :: cout << "g is locked" << std::endl;
     std::cout << "Press Q to quit." << std::endl;
     while(monitor){//!f_processed && !g_processed && !cancelled
         if(cond_f.wait_for(lk_f, std::chrono::milliseconds(100), []{return f_processed;}))
