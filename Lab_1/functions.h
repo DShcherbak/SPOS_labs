@@ -13,8 +13,7 @@ void f_function(int x);
 
 void g_function(int x);
 
-void main_demo(int fx, int gx);
+void main_thread(int fx, int gx, bool demo_mode);
 
-void main_test(int fx, int gx);
 
 #endif //LAB_1_FUNCTIONS_H
