@@ -1,3 +1,4 @@
+#include <functional>
 #include "functions.h"
 #include "custom_functions.h"
 #include "terminal.h"
@@ -8,80 +9,89 @@ const spos::lab1::demo::op_group AND = spos::lab1::demo::AND;
 
 std::condition_variable cond_f, cond_g, cond_cancel;
 std::mutex m, mf, mg;
-std::vector<bool> f_ready, g_ready, f_processed, g_processed;
-std::vector<bool> f_result, g_result;
-int test_case = 0;
+bool f_ready, g_ready, f_processed, g_processed;
+bool f_result, g_result;
+std::vector<std::pair<int, int>> args;
+int current_test_case;
 
-void f_function(int x){
-    std::unique_lock<std::mutex> lock(mf);
-    cond_f.wait(lock, []{return f_ready;});
-    lock.unlock();
+void f_function(int test_case){
+    int x = args[test_case].first;
+    std::unique_lock<std::mutex> lock_f(mf);
+    cond_f.wait(lock_f, []{return f_ready;});
+    lock_f.unlock();
 
     f_ready = false;
     std::this_thread::sleep_for(std::chrono::seconds(2));
     bool temp = f_func<AND>(x);
 
-    lock.lock();
-    f_processed = true;
-    f_result = temp;
-    //lock.unlock();
-
-    cond_f.notify_one();
+    std::unique_lock<std::mutex> lock(m);
+    if(test_case == current_test_case){
+        lock_f.lock();
+        f_processed = true;
+        f_result = temp;
+        cond_f.notify_one();
+    }
 }
 
-void g_function(int x){
-    std::unique_lock<std::mutex> lock(mg);
-    cond_g.wait(lock, []{return g_ready;});
-    lock.unlock();
+void g_function(int test_case){
+    int x = args[test_case].second;
+    std::unique_lock<std::mutex> lock_g(mg);
+    cond_g.wait(lock_g, []{return g_ready;});
+    lock_g.unlock();
 
     g_ready = false;
     std::this_thread::sleep_for(std::chrono::seconds(4));
     bool temp = g_func<AND>(x);
 
-    lock.lock();
-    g_processed = true;
-    g_result = temp;
-    //lock.unlock();
+    std::unique_lock<std::mutex> lock(m);
+    if(test_case == current_test_case){
+        lock_g.lock();
+        g_processed = true;
+        g_result = temp;
+        cond_g.notify_one();
+    }
 
-    cond_g.notify_one();
 }
 
-void start_threads(int test){
+void start_threads(int test_case){
+    {
+        std::lock_guard<std::mutex> lk(m);
+        current_test_case = test_case;
+    }
     {
         std::lock_guard<std::mutex> lk(mf);
-        f_ready.push_back(true);
-        f_processed.push_back(false);
+        f_ready = true;
+        f_processed = false;
         cond_f.notify_one();
     }
     {
         std::lock_guard<std::mutex> lk(mg);
-        g_ready.push_back(true);
-        g_processed.push_back(false);
+        g_ready = true;
+        g_processed = false;
         cond_g.notify_one();
     }
 }
 
 void main_demo(int fx, int gx){
+    static int test_case = 0;
 
-    static int test = 0;
-    test++;
 
-    std::cout << "Testing F(" << fx << ") AND G(" << gx << ") << [" << test << "];" << std::endl;
-    std::thread f(f_function, fx);
-    std::thread g(g_function, gx);
+    std::cout << "Testing F(" << fx << ") AND G(" << gx << ");" << std::endl;
+    args.emplace_back(fx, gx);
+    std::thread f(f_function, test_case);
+    std::thread g(g_function, test_case);
     //std::thread monitor(monitoring);
 
-    start_threads(test);
+    start_threads(test_case);
+    test_case++;
 
     const bool full_log = true;
     bool f_alive = true, g_alive = true, monitor = true;
-
 
     int repeated = 0;
 
 
     auto terminal = replace_terminal();
-
     monitor = true;
 
 
@@ -99,7 +109,6 @@ void main_demo(int fx, int gx){
         }
         char c = getchar();
         if (c == 'q') {
-            std::cout << "bye!" << std::endl;
             monitor = false;
         }
         if(full_log && repeated % 20 == 0)
@@ -107,24 +116,27 @@ void main_demo(int fx, int gx){
         repeated++;
     }
 
-    if(!monitor){
+    if(!monitor){ // Calculations were interupted
         std::cout << "Calculations were canceled!" << std::endl;
         {
-            std::unique_lock<std::mutex> lk_f(mf);
+            std::unique_lock<std::mutex> lk_f(mf); // no need to calculate f
             f.detach();
         }
-
-        g_alive = false;
+        {
+            std::unique_lock<std::mutex> lk_g(mg); // no need to calculate g
+            g.detach();
+        }
+        g_alive = false; // no need to join f and g (may go on endlessly)
         f_alive = false;
-    } else if(!g_processed) {
+
+    } else if(!g_processed) { // F(x) has been precessed
+
         std::cout << "F(" << fx << ") = " << f_result << std::endl;
         if(f_result == 0){
-            std::cout << "Calculation of G is unnecessary" << std::endl;
+            std::cout << "Calculation of G is unnecessary" << std::endl; // F returned 0
             std::cout << "Result = 0" << std::endl;
             g_alive = false;
-            f_alive = false;
             g.detach();
-            f.detach();
         } else {
             while(monitor) {//!g_processed && !cancelled
                 {
@@ -134,14 +146,13 @@ void main_demo(int fx, int gx){
                 }
                 char c = getchar();
                 if (c == 'q') {
-                    //std::cout << "bye!" << std::endl;
                     monitor = false;
                 }
                 if(full_log && repeated % 20 == 0)
                     std::cout << "Waiting for g..."  << std::endl;
                 repeated++;
             }
-            if(!monitor) {
+            if(!monitor) { // Calculations cancelled
                 g.detach();
                 g_alive = false;
                 std::cout << "Calculation of g is cancelled!" << std::endl;
@@ -150,20 +161,13 @@ void main_demo(int fx, int gx){
                 std::cout << "RESULT: F(" << fx << ") AND G(" << gx << ") = " << (f_result & g_result) << std::endl;
             }
         }
-    } else {
+    } else { // F(x) has been precessed
         std::cout << "G(" << gx << ") = " << g_result << std::endl;
-        {
-            std::unique_lock<std::mutex> lk_g(mg);
-            g_alive = false;
-            g.join();
-        }
         if(g_result == 0){
-            std::cout << "Calculation of F is unnecessary" << std::endl;
+            std::cout << "Calculation of F is unnecessary" << std::endl; // F returned 0
             std::cout << "Result = 0" << std::endl;
             f_alive = false;
-            g_alive = false;
             f.detach();
-            g.join();
         } else {
             while (monitor) {//!g_processed && !cancelled
                 {
@@ -173,14 +177,13 @@ void main_demo(int fx, int gx){
                 }
                 char c = getchar();
                 if (c == 'q') {
-                    //std::cout << "bye!" << std::endl;
                     monitor = false;
                 }
                 if (full_log && repeated % 20 == 0)
                     std::cout << "Waiting for f..." << std::endl;
                 repeated++;
             }
-            if (!monitor) {
+            if (!monitor) {  // Calculations cancelled
                 std::cout << "Calculation of f is cancelled!" << std::endl;
                 f.detach();
                 f_alive = false;
@@ -194,13 +197,12 @@ void main_demo(int fx, int gx){
 
     std::this_thread::sleep_for(std::chrono::seconds(1));
     set_terminal(terminal);
-    std::cout << "terminal is reset!" << std::endl;
+
     if(f_alive)
         f.join();
-    std::cout << "f closed" << std::endl;
+
     if(g_alive)
         g.join();
-    std::cout << "g closed" << std::endl;
 
     std::cout << "----------------------------------------------------" << std::endl;
     std::cout.flush();
@@ -216,7 +218,7 @@ void main_test(int fx, int gx){
     const bool debug = false;
     bool f_alive = true, g_alive = true;
 
-    start_threads();
+    start_threads(0);
 
     std::unique_lock<std::mutex> lk(m);
     std::unique_lock<std::mutex> lk_f(mf);
